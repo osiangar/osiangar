@@ -111,6 +111,29 @@
 
   .footer-note { text-align: center; color: #555; font-size: 12px; padding: 20px; }
   .hidden { display: none !important; }
+
+  /* --- added: permalink + comments --- */
+  .post-actions { display:flex; gap:10px; margin-top:10px; }
+  .action-btn {
+    background:#141414; border:1px solid #2a2a2a; color:#ccc;
+    font-size:12px; padding:6px 12px; border-radius:10px; cursor:pointer;
+  }
+  .action-btn:hover { border-color:#ffd500; color:#ffd500; }
+  .copy-toast {
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:#ffd500; color:#0a0a0a; font-size:13px; font-weight:700;
+    padding:9px 18px; border-radius:10px; z-index:999; opacity:0;
+    transition:opacity 0.2s; pointer-events:none;
+  }
+  .copy-toast.show { opacity:1; }
+  .single-post-wrap { max-width:700px; margin:0 auto; }
+  .back-link {
+    display:inline-block; margin-bottom:14px; color:#ffd500;
+    font-size:13px; cursor:pointer;
+  }
+  .comments-section { margin-top:22px; border-top:1px solid #262626; padding-top:18px; }
+  .comments-title { color:#ffd500; font-size:14px; font-weight:700; margin-bottom:10px; }
+  .comments-hint { color:#777; font-size:12px; margin-bottom:12px; }
 </style>
 </head>
 <body>
@@ -182,6 +205,14 @@ function goSeries(catKey, tag) {
   window.scrollTo({top:0, behavior:'smooth'});
 }
 
+function goPost(id) {
+  state = { type: 'post', id };
+  window.location.hash = id;
+  document.getElementById('search-box').value = '';
+  render();
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
 function renderBreadcrumb() {
   const el = document.getElementById('breadcrumb');
   el.innerHTML = '';
@@ -196,6 +227,10 @@ function renderBreadcrumb() {
   }
   if (state.type === 'search') {
     items.push({ label: `نتایج جست‌وجو: «${state.query}»`, onclick: null, current: true });
+  }
+  if (state.type === 'post') {
+    const p = postsById[state.id];
+    items.push({ label: p ? (p.date + ' · لینک پست') : 'پست', onclick: null, current: true });
   }
   items.forEach((it, i) => {
     if (i > 0) {
@@ -269,7 +304,46 @@ function renderPostCard(post, partLabel) {
     card.appendChild(chipsDiv);
   }
 
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'post-actions';
+
+  const linkBtn = document.createElement('button');
+  linkBtn.className = 'action-btn';
+  linkBtn.textContent = '🔗 کپی لینک';
+  linkBtn.onclick = (e) => {
+    e.stopPropagation();
+    copyPostLink(post.id);
+  };
+  actionsDiv.appendChild(linkBtn);
+
+  const commentsBtn = document.createElement('button');
+  commentsBtn.className = 'action-btn';
+  commentsBtn.textContent = '💬 نظرات';
+  commentsBtn.onclick = (e) => {
+    e.stopPropagation();
+    goPost(post.id);
+  };
+  actionsDiv.appendChild(commentsBtn);
+
+  card.appendChild(actionsDiv);
+
   return card;
+}
+
+function copyPostLink(id) {
+  const url = window.location.origin + window.location.pathname + '#' + id;
+  const showToast = () => {
+    const toast = document.getElementById('copy-toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1600);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(showToast).catch(() => {
+      window.prompt('لینک این پست را کپی کنید:', url);
+    });
+  } else {
+    window.prompt('لینک این پست را کپی کنید:', url);
+  }
 }
 
 function renderDirectory(container) {
@@ -391,6 +465,60 @@ function renderSearch(container, query) {
   }
 }
 
+function renderSinglePost(container, id) {
+  const p = postsById[id];
+  if (!p) {
+    const nr = document.createElement('div');
+    nr.className = 'no-results';
+    nr.textContent = 'این پست پیدا نشد. ممکن است لینک اشتباه باشد.';
+    container.appendChild(nr);
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.className = 'single-post-wrap';
+
+  const back = document.createElement('div');
+  back.className = 'back-link';
+  back.textContent = '‹ بازگشت به آرشیو';
+  back.onclick = goHome;
+  wrap.appendChild(back);
+
+  wrap.appendChild(renderPostCard(p));
+
+  const commentsSection = document.createElement('div');
+  commentsSection.className = 'comments-section';
+  commentsSection.innerHTML = `
+    <div class="comments-title">💬 نظرات</div>
+    <div class="comments-hint">نظردهی از طریق گیت‌هاب (نیاز به اکانت گیت‌هاب دارد)</div>
+    <div id="giscus-container"></div>
+  `;
+  wrap.appendChild(commentsSection);
+
+  container.appendChild(wrap);
+
+  // Lazy-load the giscus comment widget scoped to this post's id.
+  // NOTE: replace data-repo / data-repo-id / data-category / data-category-id
+  // with your own values from https://giscus.app after enabling Discussions
+  // on your GitHub repository.
+  const giscusScript = document.createElement('script');
+  giscusScript.src = 'https://giscus.app/client.js';
+  giscusScript.setAttribute('data-repo', 'YOUR_GITHUB_USERNAME/YOUR_REPO_NAME');
+  giscusScript.setAttribute('data-repo-id', 'YOUR_REPO_ID');
+  giscusScript.setAttribute('data-category', 'General');
+  giscusScript.setAttribute('data-category-id', 'YOUR_CATEGORY_ID');
+  giscusScript.setAttribute('data-mapping', 'specific');
+  giscusScript.setAttribute('data-term', id);
+  giscusScript.setAttribute('data-strict', '1');
+  giscusScript.setAttribute('data-reactions-enabled', '1');
+  giscusScript.setAttribute('data-emit-metadata', '0');
+  giscusScript.setAttribute('data-input-position', 'top');
+  giscusScript.setAttribute('data-theme', 'dark');
+  giscusScript.setAttribute('data-lang', 'fa');
+  giscusScript.setAttribute('crossorigin', 'anonymous');
+  giscusScript.async = true;
+  document.getElementById('giscus-container').appendChild(giscusScript);
+}
+
 function render() {
   renderBreadcrumb();
   const main = document.getElementById('main');
@@ -399,6 +527,7 @@ function render() {
   else if (state.type === 'category') renderCategory(main, state.key);
   else if (state.type === 'series') renderSeries(main, state.catKey, state.tag);
   else if (state.type === 'search') renderSearch(main, state.query);
+  else if (state.type === 'post') renderSinglePost(main, state.id);
 }
 
 let searchTimeout;
@@ -416,8 +545,26 @@ document.getElementById('search-box').addEventListener('input', (e) => {
   }, 250);
 });
 
+window.addEventListener('hashchange', () => {
+  const hashId = window.location.hash.replace('#', '');
+  if (hashId && postsById[hashId]) {
+    state = { type: 'post', id: hashId };
+  } else if (!hashId) {
+    state = { type: 'directory' };
+  }
+  render();
+});
+
+// If the page was opened with a direct post link (#messageXXX), open it right away.
+const initialHash = window.location.hash.replace('#', '');
+if (initialHash && postsById[initialHash]) {
+  state = { type: 'post', id: initialHash };
+}
+
 render();
 </script>
+
+<div class="copy-toast" id="copy-toast">لینک کپی شد ✅</div>
 
 </body>
 </html>
